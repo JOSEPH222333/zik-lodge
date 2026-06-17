@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  agent
+  admin
+}
+
+enum LodgeStatus {
+  pending
+  approved
+  rejected
+  occupied
+}
+
+enum DealStatus {
+  student_marked
+  agent_confirmed
+  admin_settled
+}
+
+enum TransactionStatus {
+  pending_confirmation
+  confirmed
+  rejected
+}
+
+enum CommissionMode {
+  fixed
+  percentage
+}
+
+enum VerificationStatus {
+  unverified
+  pending_review
+  verified
+  rejected
+}
+
+enum AccountStatus {
+  active
+  pending
+  restricted
+}
+
+model University {
+  id        String   @id @default(cuid())
+  name      String
+  city      String
+  state     String
+  country   String   @default("Nigeria")
+  lodges    Lodge[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id             String     @id @default(cuid())
+  name           String
+  email          String     @unique
+  phone          String?
+  photoUrl       String?
+  passwordHash   String
+  role           Role       @default(student)
+  verified       Boolean    @default(false)
+  emailVerified  Boolean    @default(false)
+  accountStatus  AccountStatus @default(active)
+  securityStamp  String?
+  banned         Boolean    @default(false)
+  agentProfile   AgentProfile?
+  listings       Lodge[]    @relation("AgentListings")
+  dealsAsStudent Deal[]     @relation("StudentDeals")
+  dealsAsAgent   Deal[]     @relation("AgentDeals")
+  transactionsAsStudent Transaction[] @relation("StudentTransactions")
+  transactionsAsAgent   Transaction[] @relation("AgentTransactions")
+  wallet         AgentWallet?
+  reports        Report[]
+  favorites      Favorite[]
+  chats          ChatParticipant[]
+  messages       Message[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model AgentProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id])
+  nin                String?
+  ninDocumentUrl     String?
+  agentPhotoUrl      String?
+  phone              String?
+  bankName           String?
+  accountNumber      String?
+  accountName        String?
+  idDocumentUrl      String?
+  selfieUrl          String?
+  verificationStatus VerificationStatus @default(unverified)
+  rejectionReason    String?
+  requests           VerificationRequest[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model VerificationRequest {
+  id          String             @id @default(cuid())
+  agentId     String
+  agent       AgentProfile       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status      VerificationStatus @default(pending_review)
+  submittedAt DateTime           @default(now())
+  reviewedBy  String?
+  notes       String?
+}
+
+model Lodge {
+  id             String      @id @default(cuid())
+  agentId        String
+  agent          User        @relation("AgentListings", fields: [agentId], references: [id])
+  universityId   String
+  university     University  @relation(fields: [universityId], references: [id])
+  title          String
+  description    String
+  location       String
+  type           String
+  price          Int
+  distanceKm     Float
+  availableRooms Int
+  status         LodgeStatus @default(pending)
+  images         LodgeImage[]
+  amenities      String[]
+  reports        Report[]
+  deals          Deal[]
+  transactions   Transaction[]
+  favorites      Favorite[]
+  reviews        Review[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model LodgeImage {
+  id        String   @id @default(cuid())
+  lodgeId   String
+  lodge     Lodge    @relation(fields: [lodgeId], references: [id], onDelete: Cascade)
+  url       String
+  publicId  String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  lodgeId   String
+  lodge     Lodge    @relation(fields: [lodgeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, lodgeId])
+}
+
+model Deal {
+  id               String     @id @default(cuid())
+  lodgeId          String
+  lodge            Lodge      @relation(fields: [lodgeId], references: [id])
+  studentId        String
+  student          User       @relation("StudentDeals", fields: [studentId], references: [id])
+  agentId          String
+  agent            User       @relation("AgentDeals", fields: [agentId], references: [id])
+  rentAmount       Int
+  commissionAmount Int
+  status           DealStatus @default(student_marked)
+  confirmedAt      DateTime?
+  settledAt        DateTime?
+  createdAt        DateTime   @default(now())
+}
+
+model CommissionSetting {
+  id        String         @id @default(cuid())
+  mode      CommissionMode @default(percentage)
+  value     Float
+  updatedByAdmin String?
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+}
+
+model Transaction {
+  id               String            @id @default(cuid())
+  lodgeId          String
+  lodge            Lodge             @relation(fields: [lodgeId], references: [id])
+  studentId        String
+  student          User              @relation("StudentTransactions", fields: [studentId], references: [id])
+  agentId          String
+  agent            User              @relation("AgentTransactions", fields: [agentId], references: [id])
+  amountPaid       Int?
+  commissionAmount Int
+  status           TransactionStatus @default(pending_confirmation)
+  createdAt        DateTime          @default(now())
+}
+
+model AgentWallet {
+  id               String   @id @default(cuid())
+  agentId          String   @unique
+  agent            User     @relation(fields: [agentId], references: [id])
+  totalEarnings    Int      @default(0)
+  pendingEarnings  Int      @default(0)
+  availableBalance Int      @default(0)
+  updatedAt         DateTime @updatedAt
+}
+
+model Report {
+  id        String   @id @default(cuid())
+  lodgeId   String
+  lodge     Lodge    @relation(fields: [lodgeId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id])
+  reason    String
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+}
+
+model Chat {
+  id           String            @id @default(cuid())
+  lodgeId      String?
+  participants ChatParticipant[]
+  messages     Message[]
+  createdAt    DateTime          @default(now())
+}
+
+model ChatParticipant {
+  id     String @id @default(cuid())
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  lodgeId   String
+  lodge     Lodge    @relation(fields: [lodgeId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  audience     Role
+  targetUserId String?
+  title        String
+  body         String
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  actorId      String
+  action       String
+  targetId     String
+  details      Json
+  previousHash String
+  hash         String
+  createdAt    DateTime @default(now())
+}
+
+model EmailOtp {
+  id        String   @id @default(cuid())
+  email     String
+  codeHash  String
+  purpose   String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, purpose])
+}

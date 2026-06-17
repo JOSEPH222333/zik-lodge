@@ -1,0 +1,19 @@
+{
+  "name": "zik-lodge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full-stack student hostel and lodge marketplace for UNIZIK students, agents, and admins.",
+  "scripts": {
+    "dev": "concurrently \"npm:dev --workspace client\" \"npm:dev --workspace server\"",
+    "build": "npm run build --workspace client && npm run build --workspace server",
+    "start": "npm run start --workspace server",
+    "lint": "npm run lint --workspace client && npm run lint --workspace server"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

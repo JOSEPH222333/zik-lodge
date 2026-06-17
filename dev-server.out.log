@@ -1,0 +1,32 @@
+
+> zik-lodge@1.0.0 dev
+> concurrently "npm:dev --workspace client" "npm:dev --workspace server"
+
+[dev] 
+[dev] > @zik-lodge/client@1.0.0 dev
+[dev] > vite --host 127.0.0.1
+[dev] 
+[dev] 
+[dev] > @zik-lodge/server@1.0.0 dev
+[dev] > tsx watch src/index.ts
+[dev] 
+[dev] 
+[dev]   [32m[1mVITE[22m v7.3.3[39m  [2mready in [0m[1m1311[22m[2m[0m ms[22m
+[dev] 
+[dev]   [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5173[22m/[39m
+[dev] ◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+[dev] Zik Lodge API listening on http://127.0.0.1:4000
+[dev] [0mPOST /api/auth/login [32m200[0m 167.132 ms - 354[0m
+[dev] [0mPOST /api/lodges/ldg_green_haven/got-this [32m201[0m 4.236 ms - 210[0m
+[dev] [0mGET / [33m404[0m 7.769 ms - 139[0m
+[dev] [0mGET / [33m404[0m 1.248 ms - 139[0m
+[dev] [0mGET /api/health [32m200[0m 6.918 ms - 37[0m
+[dev] [0mGET / [33m404[0m 13.524 ms - 139[0m
+[dev] [0mGET /api/health [32m200[0m 0.732 ms - 37[0m
+[dev] [2m2:09:39 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css[22m
+[dev] [0mPOST /api/auth/register [32m201[0m 148.169 ms - 374[0m
+[dev] [0mPOST /api/auth/login [32m200[0m 129.890 ms - 354[0m
+[dev] [0mPOST /api/auth/register [32m201[0m 83.921 ms - 354[0m
+[dev] [0mPOST /api/auth/login [32m200[0m 77.796 ms - 354[0m
+[dev] [2m2:21:25 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css[22m
+[dev] [2m2:21:26 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
