@@ -1,3 +1,4 @@
+// Test environment values keep auth, audit signing, and CORS deterministic.
 process.env.NODE_ENV = "test";
 process.env.JWT_SECRET = "test-jwt-secret";
 process.env.AUDIT_SECRET = "test-audit-secret";

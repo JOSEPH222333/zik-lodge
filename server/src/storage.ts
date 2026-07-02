@@ -3,10 +3,12 @@ import type { Express } from "express";
 
 type UploadFolder = "agent-documents" | "lodge-images" | "profile-images";
 
+// Cloudinary is optional in development; missing credentials produce stable placeholder URLs.
 function cloudinaryReady() {
   return Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
 }
 
+// Uploads buffered Multer files and returns a URL shape the frontend can render.
 export async function uploadBuffer(file: Express.Multer.File, folder: UploadFolder) {
   if (!cloudinaryReady()) {
     return {

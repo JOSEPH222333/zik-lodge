@@ -1,5 +1,6 @@
 import type { Config } from "tailwindcss";
 
+// Tailwind reads semantic color tokens from index.css so theme changes stay centralized.
 export default {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],

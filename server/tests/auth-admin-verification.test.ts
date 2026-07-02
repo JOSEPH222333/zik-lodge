@@ -2,12 +2,14 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { app } from "../src/index.js";
 
+// Helper logs in seeded users and returns a bearer token for protected endpoint tests.
 async function login(email: string, password = "Password123!") {
   const response = await request(app).post("/api/auth/login").send({ email, password });
   expect(response.status).toBe(200);
   return response.body.token as string;
 }
 
+// Confirms admin-only endpoints reject anonymous and non-admin access.
 describe("auth and admin restrictions", () => {
   it("blocks admin overview without a token", async () => {
     const response = await request(app).get("/api/admin/overview");
@@ -25,6 +27,7 @@ describe("auth and admin restrictions", () => {
   });
 });
 
+// Confirms verification validation and approved-agent listing creation.
 describe("agent verification and lodge posting", () => {
   it("validates NIN length on verification", async () => {
     const agentToken = await login("agent@ziklodge.test");

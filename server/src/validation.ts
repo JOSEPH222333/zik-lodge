@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+// Registration rules enforce email OTP and require stronger identity fields for agents.
 export const registerSchema = z.object({
   name: z.string().min(2).max(80),
   email: z.string().email(),
@@ -18,6 +19,7 @@ export const registerSchema = z.object({
   }
 });
 
+// Auth and account recovery payloads are intentionally small and strict.
 export const otpRequestSchema = z.object({
   email: z.string().email()
 });
@@ -33,6 +35,7 @@ export const loginSchema = z.object({
   password: z.string().min(1)
 });
 
+// Lodge and moderation schemas validate all user-controlled marketplace content.
 export const lodgeSchema = z.object({
   title: z.string().min(3).max(120),
   description: z.string().min(20).max(1500),
@@ -55,6 +58,7 @@ export const commissionSchema = z.object({
   value: z.coerce.number().positive()
 });
 
+// Agent verification captures identity, document, and bank details for admin review.
 export const agentVerificationSchema = z.object({
   fullName: z.string().min(2).max(80),
   nin: z.string().regex(/^\d{11}$/, "NIN must be exactly 11 digits"),

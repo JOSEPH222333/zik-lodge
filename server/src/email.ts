@@ -6,10 +6,12 @@ type SendOtpInput = {
   purpose: "signup" | "password_reset";
 };
 
+// SMTP is optional locally; when absent, OTPs are logged and returned to the dev client.
 function smtpReady() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 
+// Sends signup/password-reset OTP messages through SMTP or development fallback logging.
 export async function sendOtpEmail({ to, code, purpose }: SendOtpInput) {
   const subject = purpose === "password_reset" ? "Reset your Zik Lodge password" : "Verify your Zik Lodge email";
   const text = `Your Zik Lodge OTP is ${code}. It expires in 10 minutes.`;

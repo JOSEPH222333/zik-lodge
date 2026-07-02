@@ -32,6 +32,7 @@ import { agents, deals, lodges as initialLodges, reports, type Lodge, type Role 
 import { Badge, Button, Card, Input, Select } from "./components/ui";
 import { cn, currency, shortNumber } from "./lib/utils";
 
+// Main navigation shown in both the desktop header and mobile menu.
 const nav = [
   { href: "/", label: "Home" },
   { href: "/lodges", label: "Lodges" },
@@ -40,12 +41,14 @@ const nav = [
   { href: "/login", label: "Login" }
 ];
 
+// Converts local Nigerian phone formats into a WhatsApp-friendly international URL.
 function whatsappLink(phone: string) {
   const digits = phone.replace(/\D/g, "");
   const normalized = digits.startsWith("0") ? `234${digits.slice(1)}` : digits;
   return `https://wa.me/${normalized}`;
 }
 
+// Frontend session shape mirrors the public user payload returned by the API.
 type AppUser = {
   id: string;
   name: string;
@@ -124,6 +127,7 @@ type PlatformAudit = {
   createdAt: string;
 };
 
+// Demo accounts keep the app usable when localStorage has no saved users yet.
 const seedMembers: AppUser[] = [
   { id: "usr_admin", name: "Zik Lodge Programmer", email: "admin@ziklodge.test", phone: "+2348000000000", role: "admin", verified: true, emailVerified: true, accountStatus: "active", createdAt: "Seed admin" },
   { id: "usr_agent", name: "Adaeze Okafor", email: "agent@ziklodge.test", phone: "+2348031112048", role: "agent", verified: true, emailVerified: true, accountStatus: "active", createdAt: "Seed agent" },
@@ -133,11 +137,13 @@ const seedMembers: AppUser[] = [
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const allowedEmailDomains = new Set(["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "unizik.edu.ng", "ziklodge.test"]);
 
+// Registration accepts common public email providers plus education domains.
 function isValidEmailAddress(value: string) {
   const domain = value.toLowerCase().split("@")[1];
   return emailPattern.test(value) && Boolean(domain) && (allowedEmailDomains.has(domain) || domain.includes(".edu."));
 }
 
+// File uploads are stored as data URLs in the frontend demo flow.
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -162,6 +168,7 @@ type ApiLodge = {
   description: string;
 };
 
+// API lodge records use backend status names, so this adapter maps them to UI labels.
 function adaptApiLodge(lodge: ApiLodge): Lodge {
   return {
     id: lodge.id,
@@ -185,6 +192,7 @@ function adaptApiLodge(lodge: ApiLodge): Lodge {
   };
 }
 
+// These helpers isolate localStorage parsing so a bad saved value does not crash React.
 function getStoredUser() {
   try {
     const stored = localStorage.getItem("zik_lodge_user");
@@ -204,6 +212,8 @@ function getStoredMembers() {
 }
 
 function App() {
+  // App-level state is intentionally centralized because dashboards share transactions,
+  // messages, reports, notifications, and lodge availability in this prototype.
   const [dark, setDark] = useState(false);
   const [marketLodges, setMarketLodges] = useState<Lodge[]>(initialLodges);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => getStoredUser());
@@ -215,10 +225,12 @@ function App() {
   const [notifications, setNotifications] = useState<PlatformNotification[]>([]);
   const [auditLogs, setAuditLogs] = useState<PlatformAudit[]>([]);
 
+  // Persist locally created users between browser refreshes.
   useEffect(() => {
     localStorage.setItem("zik_lodge_members", JSON.stringify(members));
   }, [members]);
 
+  // Prefer live API listings when the backend is running; keep mock data as a fallback.
   useEffect(() => {
     fetch("/api/lodges")
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Could not load lodges"))))
@@ -228,6 +240,7 @@ function App() {
       .catch(() => undefined);
   }, []);
 
+  // Upserts users by email so repeated login/register events do not duplicate accounts.
   function addOrUpdateMember(user: AppUser) {
     setMembers((items) => {
       const exists = items.some((item) => item.email === user.email);
@@ -235,6 +248,7 @@ function App() {
     });
   }
 
+  // Keeps React state and localStorage in sync for login/logout.
   function updateCurrentUser(user: AppUser | null) {
     setCurrentUser(user);
     if (user) {
@@ -246,6 +260,7 @@ function App() {
     }
   }
 
+  // Admin-side action that marks an agent ready to operate on the marketplace.
   function approveAgent(email: string) {
     const agent = members.find((member) => member.email === email);
     setMembers((items) => items.map((item) => (item.email === email ? { ...item, verified: true, accountStatus: "active" } : item)));
@@ -260,6 +275,7 @@ function App() {
     pushAudit("Admin", "agent.approved", email);
   }
 
+  // Account restrictions immediately affect the logged-in user if they are editing themselves.
   function updateMemberStatus(email: string, accountStatus: AppUser["accountStatus"]) {
     const member = members.find((item) => item.email === email);
     setMembers((items) => items.map((item) => (item.email === email ? { ...item, accountStatus, verified: accountStatus === "active" ? item.verified : false } : item)));
@@ -274,6 +290,7 @@ function App() {
     pushAudit("Admin", "account.status_changed", `${email} -> ${accountStatus}`);
   }
 
+  // Rejection keeps the agent pending so they can correct verification details later.
   function rejectAgent(email: string) {
     const agent = members.find((member) => member.email === email);
     setMembers((items) => items.map((item) => (item.email === email ? { ...item, verified: false, accountStatus: "pending" } : item)));
@@ -285,18 +302,22 @@ function App() {
     pushAudit("Admin", "agent.rejected", email);
   }
 
+  // Lightweight in-memory notifications power the dashboard activity feeds.
   function pushNotification(notification: Omit<PlatformNotification, "id" | "createdAt" | "read">) {
     setNotifications((items) => [{ id: `ntf-${Date.now()}`, createdAt: new Date().toLocaleString(), read: false, ...notification }, ...items]);
   }
 
+  // Audit entries make admin actions traceable in the UI prototype.
   function pushAudit(actor: string, action: string, target: string) {
     setAuditLogs((items) => [{ id: `aud-${Date.now()}`, actor, action, target, createdAt: new Date().toLocaleString() }, ...items]);
   }
 
+  // Mirrors the server commission helper for locally simulated transactions.
   function calculateLocalCommission(amount: number) {
     return commissionSettings.mode === "fixed" ? commissionSettings.value : Math.round((amount * commissionSettings.value) / 100);
   }
 
+  // Students use this when they mark a lodge as successfully obtained.
   function initiateTransaction(lodge: Lodge) {
     if (!currentUser) return { ok: false, message: "Please login before marking a lodge." };
     const duplicate = transactions.find((transaction) => transaction.lodgeId === lodge.id && transaction.studentEmail === currentUser.email && transaction.status !== "rejected");
@@ -325,6 +346,7 @@ function App() {
     return { ok: true, message: "Transaction created. Waiting for agent confirmation." };
   }
 
+  // Creates or appends to the conversation thread for a lodge.
   function sendThreadMessage(lodge: Lodge, sender: AppUser, body: string) {
     const threadId = `${lodge.id}-${sender.role === "agent" ? "agent" : sender.email}`;
     const nextMessage = { senderEmail: sender.email, senderName: sender.name, body, createdAt: new Date().toLocaleString() };
@@ -354,6 +376,7 @@ function App() {
     });
   }
 
+  // Replies stay attached to an existing thread so admins can review full context.
   function sendThreadReply(threadId: string, sender: AppUser, body: string) {
     const thread = messageThreads.find((item) => item.id === threadId);
     if (!thread) return;
@@ -367,6 +390,7 @@ function App() {
     });
   }
 
+  // Student reports feed the admin dashboard and notification list.
   function submitPlatformReport(lodge: Lodge, reporter: AppUser, reason: string) {
     const report: PlatformReport = {
       id: `rpt-${Date.now()}`,
@@ -389,6 +413,7 @@ function App() {
     return report;
   }
 
+  // Confirming a transaction also marks the lodge occupied in the marketplace.
   function updateTransactionStatus(id: string, status: TransactionStatus) {
     setTransactions((items) => items.map((transaction) => (transaction.id === id ? { ...transaction, status } : transaction)));
     if (status === "confirmed") {
@@ -428,6 +453,7 @@ function App() {
   );
 }
 
+// Top navigation handles auth-aware dashboard links and responsive mobile toggling.
 function Header({ dark, setDark, currentUser, onLogout }: { dark: boolean; setDark: (value: boolean) => void; currentUser: AppUser | null; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -508,6 +534,7 @@ function Header({ dark, setDark, currentUser, onLogout }: { dark: boolean; setDa
   );
 }
 
+// Route guard used by private pages and role-specific dashboards.
 function ProtectedPage({ currentUser, roles, children }: { currentUser: AppUser | null; roles?: Role[]; children: React.ReactNode }) {
   if (!currentUser) {
     return (
@@ -552,6 +579,7 @@ function ProtectedPage({ currentUser, roles, children }: { currentUser: AppUser 
   return children;
 }
 
+// Landing page combines search, featured listings, trust signals, and calls to action.
 function HomePage({ lodges, currentUser }: { lodges: Lodge[]; currentUser: AppUser | null }) {
   return (
     <>
@@ -596,6 +624,7 @@ function HomePage({ lodges, currentUser }: { lodges: Lodge[]; currentUser: AppUs
   );
 }
 
+// Shared lodge search form; in compact mode it sits inside the hero.
 function SearchPanel({ compact = true }: { compact?: boolean }) {
   const navigate = useNavigate();
   const [location, setLocation] = useState("");
@@ -645,6 +674,7 @@ function SearchPanel({ compact = true }: { compact?: boolean }) {
   );
 }
 
+// Featured listings are filtered to approved/available lodges before rendering cards.
 function FeaturedLodges({ lodges, currentUser }: { lodges: Lodge[]; currentUser: AppUser | null }) {
   return (
     <section className="page-shell py-16">
@@ -671,6 +701,7 @@ function FeaturedLodges({ lodges, currentUser }: { lodges: Lodge[]; currentUser:
   );
 }
 
+// Reusable marketplace card for lodge summaries.
 function LodgeCard({ lodge }: { lodge: Lodge }) {
   return (
     <Card className="group overflow-hidden">
@@ -709,6 +740,7 @@ function LodgeCard({ lodge }: { lodge: Lodge }) {
   );
 }
 
+// Static onboarding steps for students, agents, and admins.
 function HowItWorks() {
   const steps = [
     { icon: <Search />, title: "Search by budget", text: "Filter lodges by location, price, type, distance, and room availability." },
@@ -733,6 +765,7 @@ function HowItWorks() {
   );
 }
 
+// Agent reputation block built from mock agent stats.
 function VerifiedAgents() {
   return (
     <section className="page-shell py-16">
@@ -757,6 +790,7 @@ function VerifiedAgents() {
   );
 }
 
+// Social proof shown on the home page.
 function Testimonials() {
   return (
     <section className="bg-secondary py-16">
@@ -773,6 +807,7 @@ function Testimonials() {
   );
 }
 
+// Final home-page prompt that routes users toward registration.
 function CTA() {
   return (
     <section className="page-shell py-16">
@@ -791,6 +826,7 @@ function CTA() {
   );
 }
 
+// Searchable lodge index with local filters for location, type, and price.
 function ListingsPage({ lodges }: { lodges: Lodge[] }) {
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
@@ -848,6 +884,7 @@ function ListingsPage({ lodges }: { lodges: Lodge[] }) {
   );
 }
 
+// Detail page handles contact, messaging, reporting, and the "I Got This Lodge" flow.
 function LodgeDetailsPage({
   lodges,
   currentUser,
@@ -975,6 +1012,7 @@ function LodgeDetailsPage({
   );
 }
 
+// Shared dashboard frame for student, agent, and admin views.
 function DashboardShell({
   title,
   role,
@@ -1012,6 +1050,7 @@ function DashboardShell({
   );
 }
 
+// Student dashboard shows saved activity, messages, notifications, and transactions.
 function StudentDashboard({
   currentUser,
   lodges,
@@ -1205,6 +1244,7 @@ function StudentDashboard({
   );
 }
 
+// Agent dashboard manages verification state, listings, messages, and deal confirmation.
 function AgentDashboard({
   currentUser,
   lodges,
@@ -1602,6 +1642,7 @@ function AgentDashboard({
   );
 }
 
+// Admin dashboard centralizes moderation, commission settings, users, reports, and audits.
 function AdminDashboard({
   members,
   lodges,
@@ -1779,6 +1820,7 @@ function AdminDashboard({
   );
 }
 
+// Login/register flow shares one component because most fields and API handling overlap.
 function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (user: AppUser) => void }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
@@ -1931,6 +1973,7 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
   );
 }
 
+// Password recovery requests an OTP and then submits the new password.
 function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -1989,6 +2032,7 @@ function ForgotPasswordPage() {
   );
 }
 
+// Placeholder verification center for future multi-step agent onboarding.
 function VerificationPage() {
   return (
     <main className="page-shell py-10">
@@ -2006,6 +2050,7 @@ function VerificationPage() {
   );
 }
 
+// Favorites currently reuses the first few lodges until saved favorites are persisted.
 function FavoritesPage({ lodges }: { lodges: Lodge[] }) {
   return (
     <main className="page-shell py-10">
@@ -2015,6 +2060,7 @@ function FavoritesPage({ lodges }: { lodges: Lodge[] }) {
   );
 }
 
+// Legal/policy pages are content-driven to avoid separate components for each policy.
 function PolicyPage({ type }: { type: "privacy" | "terms" | "refund" | "abuse" }) {
   const content = {
     privacy: {
@@ -2063,6 +2109,7 @@ function PolicyPage({ type }: { type: "privacy" | "terms" | "refund" | "abuse" }
   );
 }
 
+// Static company/product context page.
 function AboutPage() {
   return (
     <main className="page-shell py-16">
@@ -2074,6 +2121,7 @@ function AboutPage() {
   );
 }
 
+// Contact form opens the user's email client with a prefilled support message.
 function ContactPage() {
   const [contact, setContact] = useState({ name: "", email: "", topic: "Student support", message: "" });
   const [sent, setSent] = useState("");
@@ -2123,6 +2171,7 @@ function ContactPage() {
   );
 }
 
+// Small dashboard helpers keep cards, tables, metrics, and headings consistent.
 function Stats({ stats }: { stats: Array<[string, string | number]> }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -2175,6 +2224,7 @@ function SectionTitle({ icon, eyebrow, title }: { icon: React.ReactNode; eyebrow
   );
 }
 
+// Site footer with navigation, trust links, support contact, and Casara branding.
 function Footer() {
   return (
     <footer className="border-t border-border bg-card py-12">
@@ -2219,7 +2269,7 @@ function Footer() {
         </div>
       </div>
       <div className="page-shell mt-8 border-t border-border pt-5 text-sm text-muted-foreground">
-        <p>© 2026 Zik Lodge. Built for safer student accommodation around Nnamdi Azikiwe University.</p>
+        <p>© 2026 Casara. Zik Lodge is built for safer student accommodation around Nnamdi Azikiwe University.</p>
       </div>
     </footer>
   );

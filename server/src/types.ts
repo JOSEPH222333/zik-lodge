@@ -4,6 +4,7 @@ export type CommissionMode = "fixed" | "percentage";
 export type VerificationStatus = "unverified" | "pending_review" | "verified" | "rejected";
 export type TransactionStatus = "pending_confirmation" | "confirmed" | "rejected";
 
+// Core domain entities shared by the API, in-memory store, and tests.
 export type User = {
   id: string;
   name: string;
@@ -21,6 +22,7 @@ export type User = {
   updatedAt: string;
 };
 
+// Listings move from pending to approved/occupied as admins and agents review activity.
 export type Lodge = {
   id: string;
   agentId: string;
@@ -38,6 +40,7 @@ export type Lodge = {
   createdAt: string;
 };
 
+// Deals represent the older "student marked" flow; Transaction is the commission ledger.
 export type Deal = {
   id: string;
   lodgeId: string;
@@ -49,6 +52,7 @@ export type Deal = {
   createdAt: string;
 };
 
+// Reports, verification, wallets, notifications, messages, OTPs, and audits support trust flows.
 export type Report = {
   id: string;
   lodgeId: string;

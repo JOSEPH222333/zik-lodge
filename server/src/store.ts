@@ -4,11 +4,13 @@ import "dotenv/config";
 import { nanoid } from "nanoid";
 import { AgentProfile, AgentWallet, AuditEvent, CommissionMode, Deal, EmailOtp, Lodge, MessageThread, Notification, Report, Transaction, User, VerificationRequest } from "./types.js";
 
+// This in-memory store powers the prototype and tests; replace these arrays with a database in production.
 const now = () => new Date().toISOString();
 const auditSecret = process.env.AUDIT_SECRET ?? "dev-audit-secret-change-me";
 
 type UserIntegrityFields = Pick<User, "id" | "name" | "email" | "phone" | "role" | "verified" | "emailVerified" | "accountStatus" | "banned" | "createdAt">;
 
+// HMAC stamp helps detect accidental or unauthorized changes to sensitive user fields.
 export function signUserRecord(user: UserIntegrityFields) {
   return crypto.createHmac("sha256", auditSecret).update(JSON.stringify({
     id: user.id,
@@ -24,10 +26,12 @@ export function signUserRecord(user: UserIntegrityFields) {
   })).digest("hex");
 }
 
+// Seed users are signed immediately so securityVerified works for demo accounts too.
 function securedUser(user: Omit<User, "securityStamp" | "updatedAt">): User {
   return { ...user, securityStamp: signUserRecord(user), updatedAt: user.createdAt };
 }
 
+// Default accounts make local development and dashboard testing possible without setup.
 export const users: User[] = [
   securedUser({
     id: "usr_admin",
@@ -71,6 +75,7 @@ export const users: User[] = [
   })
 ];
 
+// Starter lodge data is returned by public listing endpoints.
 export const lodges: Lodge[] = [
   {
     id: "ldg_green_haven",
@@ -93,6 +98,7 @@ export const lodges: Lodge[] = [
   }
 ];
 
+// Mutable collections below represent the app's runtime state while the server is running.
 export const reports: Report[] = [];
 export const deals: Deal[] = [];
 export const registeredIps = new Set<string>();
@@ -108,25 +114,30 @@ export const platformRevenue = {
   total: 0
 };
 
+// Admins can change this at runtime through commission endpoints.
 export const commissionSettings = {
   mode: "percentage" as CommissionMode,
   value: 10
 };
 
+// Public user payload strips passwordHash and includes integrity verification metadata.
 export function publicUser(user: User) {
   const { passwordHash: _passwordHash, ...safeUser } = user;
   return { ...safeUser, securityVerified: user.securityStamp === signUserRecord(user) };
 }
 
+// Prefixes make generated IDs readable in API responses and test output.
 export function createId(prefix: string) {
   return `${prefix}_${nanoid(10)}`;
 }
 
+// Central commission calculator for older deal flows.
 export function calculateCommission(rentAmount: number) {
   if (commissionSettings.mode === "fixed") return commissionSettings.value;
   return Math.round((rentAmount * commissionSettings.value) / 100);
 }
 
+// Notifications are inserted newest-first for dashboard feeds.
 export function pushNotification(notification: Omit<Notification, "id" | "createdAt" | "read">) {
   const next = {
     id: createId("ntf"),
@@ -138,12 +149,14 @@ export function pushNotification(notification: Omit<Notification, "id" | "create
   return next;
 }
 
+// Re-stamp users whenever admin or auth flows mutate protected fields.
 export function stampUser(user: User) {
   user.updatedAt = now();
   user.securityStamp = signUserRecord(user);
   return user;
 }
 
+// Audit events form a simple hash chain so tampering is easier to spot.
 export function createAuditEvent(event: Omit<AuditEvent, "id" | "createdAt" | "previousHash" | "hash">) {
   const previousHash = auditEvents[0]?.hash ?? "genesis";
   const createdAt = now();

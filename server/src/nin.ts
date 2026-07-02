@@ -1,3 +1,4 @@
+// Verifies NIN format first, then delegates to the configured live provider when available.
 export async function verifyNin(nin: string) {
   if (!/^\d{11}$/.test(nin)) {
     return { verified: false, reason: "NIN must be exactly 11 digits" };

@@ -3,8 +3,10 @@ import jwt from "jsonwebtoken";
 import { Role } from "./types.js";
 import { users } from "./store.js";
 
+// Keep this overrideable in production; the fallback is only for local development.
 const secret = process.env.JWT_SECRET ?? "dev-secret-change-me";
 
+// Authenticated requests receive the decoded user identity after requireAuth succeeds.
 export type AuthRequest = Request & {
   user?: {
     id: string;
@@ -12,10 +14,12 @@ export type AuthRequest = Request & {
   };
 };
 
+// JWT payload is deliberately small; role checks still validate against server-side users.
 export function signToken(payload: { id: string; role: Role }) {
   return jwt.sign(payload, secret, { expiresIn: "7d" });
 }
 
+// Rejects missing, expired, banned, restricted, or still-pending accounts before handlers run.
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
@@ -33,6 +37,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
+// Role middleware is composed per route to keep permissions readable at the route definition.
 export function requireRole(...roles: Role[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {

@@ -1,5 +1,6 @@
 export type Role = "student" | "agent" | "admin";
 
+// Lodge is the frontend display model used by cards, search, and detail pages.
 export type Lodge = {
   id: string;
   title: string;
@@ -21,6 +22,7 @@ export type Lodge = {
   images: string[];
 };
 
+// Initial sample listings keep the UI usable before the API returns live lodges.
 export const lodges: Lodge[] = [
   {
     id: "green-haven-ifite",
@@ -121,6 +123,7 @@ export const lodges: Lodge[] = [
   }
 ];
 
+// Demo agent/report/deal data feeds the public trust sections and admin dashboard.
 export const agents = [
   { name: "Adaeze Okafor", verified: true, listings: 18, deals: 43, rating: 4.9 },
   { name: "Chinedu Mbachu", verified: true, listings: 27, deals: 61, rating: 4.7 },

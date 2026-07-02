@@ -17,6 +17,7 @@ import { agentProfiles, agentWallets, auditEvents, calculateCommission, commissi
 
 dotenv.config();
 
+// Express app setup and shared middleware live here so tests can import the same app instance.
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const upload = multer({
@@ -47,10 +48,12 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "zik-lodge-api" });
 });
 
+// OTPs are stored hashed in memory so the raw code is only exposed through email/dev response.
 function hashOtp(code: string) {
   return crypto.createHash("sha256").update(code).digest("hex");
 }
 
+// Authentication and account recovery routes.
 app.post("/api/auth/request-otp", async (req, res) => {
   const parsed = otpRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid email" });
@@ -232,6 +235,7 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ user: publicUser(user), token: signToken({ id: user.id, role: user.role }) });
 });
 
+// Public and protected lodge marketplace routes.
 app.get("/api/lodges", (req, res) => {
   const { location, type, maxPrice, universityId = "unizik" } = req.query;
   const result = lodges.filter((lodge) => {
@@ -315,6 +319,7 @@ app.post("/api/lodges/:id/got-this", requireAuth, requireRole("student"), (req: 
   res.status(201).json(deal);
 });
 
+// Agent verification and document upload routes.
 app.post("/api/agent/verify", requireAuth, requireRole("agent"), async (req: AuthRequest, res) => {
   const parsed = agentVerificationSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid verification data", errors: parsed.error.flatten() });
@@ -377,6 +382,7 @@ app.get("/api/agent/status", requireAuth, requireRole("agent"), (req: AuthReques
   });
 });
 
+// Notification and in-site messaging routes.
 app.get("/api/notifications", requireAuth, (req: AuthRequest, res) => {
   const currentUser = users.find((user) => user.id === req.user!.id);
   res.json(notifications.filter((notification) => notification.audience === currentUser?.role && (!notification.targetUserId || notification.targetUserId === req.user!.id)));
@@ -415,6 +421,7 @@ app.post("/api/lodges/:id/messages", requireAuth, requireRole("student", "agent"
   res.status(201).json(thread);
 });
 
+// Transaction routes track student claims, agent confirmation, and wallet balances.
 app.post("/api/transaction/initiate", requireAuth, requireRole("student"), (req: AuthRequest, res) => {
   const { lodgeId, amountPaid } = req.body as { lodgeId?: string; amountPaid?: number };
   if (!lodgeId) return res.status(400).json({ message: "lodgeId is required" });
@@ -483,6 +490,7 @@ app.post("/api/transaction/reject/:id", requireAuth, requireRole("agent"), (req:
   res.json({ transaction, wallet });
 });
 
+// Admin analytics, moderation, commission, user, and audit controls.
 app.get("/api/transactions/all", requireAuth, requireRole("admin"), (_req, res) => {
   res.json(transactions);
 });
@@ -661,6 +669,7 @@ app.patch("/api/admin/commission", requireAuth, requireRole("admin"), (req, res)
   res.json(commissionSettings);
 });
 
+// Upload endpoint used by agents/admins when attaching lodge photos.
 app.post("/api/uploads/lodge-images", requireAuth, requireRole("agent", "admin"), upload.array("images", 8), async (req, res) => {
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (files.some((file) => !file.mimetype.startsWith("image/"))) {
@@ -679,10 +688,12 @@ app.post("/api/uploads/lodge-images", requireAuth, requireRole("agent", "admin")
   });
 });
 
+// Final error handler normalizes thrown middleware errors as JSON responses.
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   res.status(400).json({ message: err.message || "Request failed" });
 });
 
+// Avoid binding a port during test runs; Vitest imports app directly.
 if (process.env.NODE_ENV !== "test") {
   app.listen(port, "127.0.0.1", () => {
     console.log(`Zik Lodge API listening on http://127.0.0.1:${port}`);

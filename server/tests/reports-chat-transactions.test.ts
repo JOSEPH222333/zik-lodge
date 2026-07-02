@@ -2,12 +2,14 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { app } from "../src/index.js";
 
+// Helper logs in seeded users and returns a bearer token for protected endpoint tests.
 async function login(email: string, password = "Password123!") {
   const response = await request(app).post("/api/auth/login").send({ email, password });
   expect(response.status).toBe(200);
   return response.body.token as string;
 }
 
+// Covers student safety/reporting flows plus duplicate transaction protection.
 describe("reports, chat, and lodge claims", () => {
   it("allows a student to report a lodge", async () => {
     const token = await login("student@ziklodge.test");

@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens are expressed as HSL triplets for Tailwind color utilities. */
 :root {
   --background: 36 55% 97%;
   --foreground: 236 48% 10%;
@@ -22,6 +23,7 @@
   --ring: 25 93% 55%;
 }
 
+/* Dark theme swaps the same semantic tokens instead of duplicating component styles. */
 .dark {
   --background: 236 45% 8%;
   --foreground: 34 45% 96%;
@@ -42,6 +44,7 @@
   --ring: 25 93% 55%;
 }
 
+/* Global resets keep controls predictable across browsers. */
 * {
   box-sizing: border-box;
 }
@@ -67,6 +70,7 @@ img {
   max-width: 100%;
 }
 
+/* Decorative background texture used by hero-style sections. */
 .noise {
   background-image:
     radial-gradient(circle at 14% 18%, rgba(3, 6, 118, .16), transparent 31%),
@@ -75,6 +79,7 @@ img {
     linear-gradient(135deg, rgba(255,255,255,.65), transparent);
 }
 
+/* Shared content width so pages align without repeating container classes. */
 .page-shell {
   width: min(1180px, calc(100% - 32px));
   margin-inline: auto;
