@@ -1,37 +1,40 @@
 import { z } from "zod";
 
+const emailSchema = z.string().trim().toLowerCase().email().refine((email) => {
+  const domain = email.toLowerCase().split("@")[1];
+  return Boolean(domain) && !domain.includes("..");
+}, "Use a valid email address");
+const nigerianPhoneSchema = z.string().regex(/^0\d{10}$/, "Phone number must be exactly 11 digits and start with 0");
+const profileImageSchema = z.string().min(10).max(2_800_000, "Profile image must be 2MB or smaller").optional();
+
 // Registration rules enforce email OTP and require stronger identity fields for agents.
 export const registerSchema = z.object({
   name: z.string().min(2).max(80),
-  email: z.string().email(),
-  phone: z.string().regex(/^\+?\d[\d\s-]{7,18}$/, "Valid phone number is required"),
+  email: emailSchema,
+  phone: nigerianPhoneSchema,
   password: z.string().min(8),
   role: z.enum(["student", "agent"]).default("student"),
   otp: z.string().regex(/^\d{6}$/, "OTP must be 6 digits"),
-  photoUrl: z.string().min(10).optional(),
-  nin: z.string().regex(/^\d{11}$/, "NIN must be exactly 11 digits").optional(),
+  photoUrl: profileImageSchema,
+  nin: z.string().optional(),
   ninDocumentUrl: z.string().min(10).optional()
 }).superRefine((data, ctx) => {
-  if (data.role === "agent") {
-    if (!data.photoUrl) ctx.addIssue({ code: "custom", path: ["photoUrl"], message: "Agent image is required" });
-    if (!data.nin) ctx.addIssue({ code: "custom", path: ["nin"], message: "Valid NIN is required" });
-    if (!data.ninDocumentUrl) ctx.addIssue({ code: "custom", path: ["ninDocumentUrl"], message: "NIN image upload is required" });
-  }
+  if (!data.photoUrl) ctx.addIssue({ code: "custom", path: ["photoUrl"], message: "Profile image is required" });
 });
 
 // Auth and account recovery payloads are intentionally small and strict.
 export const otpRequestSchema = z.object({
-  email: z.string().email()
+  email: emailSchema
 });
 
 export const resetPasswordSchema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   otp: z.string().regex(/^\d{6}$/, "OTP must be 6 digits"),
   password: z.string().min(8)
 });
 
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   password: z.string().min(1)
 });
 
@@ -60,11 +63,12 @@ export const commissionSchema = z.object({
 
 // Agent verification captures identity, document, and bank details for admin review.
 export const agentVerificationSchema = z.object({
-  fullName: z.string().min(2).max(80),
-  nin: z.string().regex(/^\d{11}$/, "NIN must be exactly 11 digits"),
-  phone: z.string().min(7).max(30),
-  ninDocumentUrl: z.string().min(10),
-  agentPhotoUrl: z.string().min(10),
+  fullName: z.string().min(2).max(25),
+  email: emailSchema.optional(),
+  nin: z.string().optional(),
+  phone: nigerianPhoneSchema,
+  ninDocumentUrl: z.string().min(10).optional(),
+  agentPhotoUrl: z.string().min(10).max(2_800_000, "Agent profile image must be 2MB or smaller"),
   bankName: z.string().min(2).max(80),
   accountNumber: z.string().regex(/^\d{10}$/, "Account number must be 10 digits"),
   accountName: z.string().min(2).max(120),

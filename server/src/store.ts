@@ -1,8 +1,10 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import "dotenv/config";
+import dotenv from "dotenv";
 import { nanoid } from "nanoid";
 import { AgentProfile, AgentWallet, AuditEvent, CommissionMode, Deal, EmailOtp, Lodge, MessageThread, Notification, Report, Transaction, User, VerificationRequest } from "./types.js";
+
+dotenv.config({ path: new URL("../.env", import.meta.url) });
 
 // This in-memory store powers the prototype and tests; replace these arrays with a database in production.
 const now = () => new Date().toISOString();

@@ -22,7 +22,14 @@ Frontend: `http://127.0.0.1:5173`
 
 API: `http://127.0.0.1:4000/api/health`
 
-Seed login accounts. Change the admin credentials in `server/.env` using the variables shown in `server/.env.example`:
+Seed login accounts. To change the admin login, create or edit `server/.env` and set the admin variables shown in `server/.env.example`, then restart the backend:
+
+```env
+ADMIN_NAME=Your Admin Name
+ADMIN_EMAIL=your-admin-email@example.com
+ADMIN_PHONE=08012345678
+ADMIN_PASSWORD=YourStrongPassword123!
+```
 
 - Admin: `admin@ziklodge.test` / `Password123!`
 - Agent: `agent@ziklodge.test` / `Password123!`
@@ -31,7 +38,7 @@ Seed login accounts. Change the admin credentials in `server/.env` using the var
 Admin is the programmer/platform owner account. Public registration allows only
 students and agents; admin dashboard routes are restricted to admin users.
 
-Registration currently blocks a second account from the same IP address.
+Signup and password-reset OTPs are tied to the same normalized account email. Users must reset with the email they used when creating the account.
 
 For production, copy `server/.env.production.example` to your real environment settings and replace every secret:
 
@@ -41,9 +48,9 @@ For production, copy `server/.env.production.example` to your real environment s
 - `ENFORCE_HTTPS=true`: rejects non-HTTPS proxy traffic
 - `SMTP_*`: real email provider/app-password for OTP delivery
 - `CLOUDINARY_*`: real image/document storage
-- `NIN_VERIFICATION_*`: live NIN verification provider credentials
+- NIN verification is disabled for now; keep `NIN_VERIFICATION_*` unset until you add a licensed provider.
 
-The support email is `supporttearmziklodge@gmail.com`. Change `SUPPORT_EMAIL` if you intentionally want another address.
+The support/OTP sender email is `myappziklodg@gmail.com`. Change `SUPPORT_EMAIL` and `SMTP_FROM` if you intentionally want another address.
 
 ## Core API
 
@@ -73,21 +80,14 @@ The support email is `supporttearmziklodge@gmail.com`. Change `SUPPORT_EMAIL` if
 - `GET /api/admin/pending-verifications`
 - `POST /api/admin/approve-agent/:id`
 - `POST /api/admin/reject-agent/:id`
-- `POST /api/admin/set-commission`
 - `GET /api/admin/analytics`
 - `POST /api/admin/approve-payout/:agentId`
-- `PATCH /api/admin/commission`
 
-## Commission flow
+## Commission status
 
-1. Student clicks "I Got This Lodge".
-2. API creates a deal with status `student_marked`.
-3. Commission is calculated from the active setting.
-4. Agent confirms payment.
-5. Deal status becomes `agent_confirmed` and the lodge is marked occupied.
-6. Admin can track and settle commissions.
+Commission tracking is disabled for now. Student lodge claims and agent confirmations still work, but commission amounts are stored as `0` and admin commission update endpoints return `410`.
 
-Agent verification/commission payments are shown in-app as:
+Agent verification payments are shown in-app as:
 
 - Bank: FirstBank
 - Account number: `3159371980`
@@ -105,13 +105,13 @@ Security controls currently included:
 
 - Role-protected admin, agent, and student routes
 - OTP email verification and password reset
-- Agent NIN format validation plus a production hook for a live NIN provider
+- Agent NIN verification is disabled for now
 - Cloudinary-ready document/image uploads with file type and size validation
 - Admin account restriction/pending/verification controls
 - Reports and lodge claims notify admin/agents
 - Hash-chained audit logs for sensitive admin/account actions
 
-Important: true NIN verification requires credentials from an official or licensed NIN verification provider. Without `NIN_VERIFICATION_API_URL` and `NIN_VERIFICATION_API_KEY`, the app can validate the NIN format and keep agents pending for manual admin review, but it cannot legally prove the NIN is real.
+Important: true NIN verification requires credentials from an official or licensed NIN verification provider. NIN checks are currently disabled until that provider is added.
 
 ## Tests
 

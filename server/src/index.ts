@@ -8,14 +8,13 @@ import helmet from "helmet";
 import morgan from "morgan";
 import multer from "multer";
 import { AuthRequest, requireAuth, requireRole, signToken } from "./auth.js";
-import { computeCommission, getOrCreateWallet } from "./commission.js";
+import { getOrCreateWallet } from "./commission.js";
 import { sendOtpEmail } from "./email.js";
-import { verifyNin } from "./nin.js";
 import { uploadBuffer } from "./storage.js";
-import { agentVerificationSchema, commissionSchema, lodgeSchema, loginSchema, messageSchema, otpRequestSchema, registerSchema, rejectVerificationSchema, reportSchema, resetPasswordSchema, userStatusSchema } from "./validation.js";
-import { agentProfiles, agentWallets, auditEvents, calculateCommission, commissionSettings, createAuditEvent, createId, deals, emailOtps, lodges, messageThreads, notifications, platformRevenue, publicUser, pushNotification, registeredIps, reports, signUserRecord, stampUser, transactions, users, verificationRequests } from "./store.js";
+import { agentVerificationSchema, lodgeSchema, loginSchema, messageSchema, otpRequestSchema, registerSchema, rejectVerificationSchema, reportSchema, resetPasswordSchema, userStatusSchema } from "./validation.js";
+import { agentProfiles, agentWallets, auditEvents, commissionSettings, createAuditEvent, createId, deals, emailOtps, lodges, messageThreads, notifications, platformRevenue, publicUser, pushNotification, reports, signUserRecord, stampUser, transactions, users, verificationRequests } from "./store.js";
 
-dotenv.config();
+dotenv.config({ path: new URL("../.env", import.meta.url) });
 
 // Express app setup and shared middleware live here so tests can import the same app instance.
 const app = express();
@@ -76,11 +75,16 @@ app.post("/api/auth/request-otp", async (req, res) => {
   if (existingIndex >= 0) emailOtps[existingIndex] = otpRecord;
   else emailOtps.push(otpRecord);
 
-  const delivery = await sendOtpEmail({ to: email, code, purpose: "signup" });
+  let delivery;
+  try {
+    delivery = await sendOtpEmail({ to: email, code, purpose: "signup" });
+  } catch (error) {
+    return res.status(503).json({ message: error instanceof Error ? error.message : "OTP email could not be sent" });
+  }
   res.json({
     message: "OTP sent to email.",
     emailDelivered: delivery.delivered,
-    devOtp: process.env.NODE_ENV === "production" ? undefined : code
+    devOtp: process.env.NODE_ENV === "production" || delivery.delivered ? undefined : code
   });
 });
 
@@ -104,11 +108,16 @@ app.post("/api/auth/forgot-password", async (req, res) => {
   if (existingIndex >= 0) emailOtps[existingIndex] = otpRecord;
   else emailOtps.push(otpRecord);
 
-  const delivery = await sendOtpEmail({ to: email, code, purpose: "password_reset" });
+  let delivery;
+  try {
+    delivery = await sendOtpEmail({ to: email, code, purpose: "password_reset" });
+  } catch {
+    return res.status(503).json({ message: "Password reset email could not be sent. Check SMTP configuration." });
+  }
   res.json({
     message: "If that email exists, a reset OTP has been sent.",
     emailDelivered: delivery.delivered,
-    devOtp: process.env.NODE_ENV === "production" ? undefined : code
+    devOtp: process.env.NODE_ENV === "production" || delivery.delivered ? undefined : code
   });
 });
 
@@ -138,25 +147,20 @@ app.post("/api/auth/register", async (req, res) => {
   if (users.some((user) => user.email.toLowerCase() === parsed.data.email.toLowerCase())) {
     return res.status(409).json({ message: "Email already exists" });
   }
-  const forwardedFor = req.headers["x-forwarded-for"];
-  const ipAddress = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(",")[0] || req.ip || req.socket.remoteAddress || "unknown";
-  const ipKey = ipAddress.trim();
-  if (registeredIps.has(ipKey)) {
-    return res.status(409).json({ message: "Only one account can be created from this IP address" });
-  }
+  // IP-based duplicate account blocking is disabled for local testing.
+  // Re-enable this block later if you want to stop many signups from one IP.
+  // const forwardedFor = req.headers["x-forwarded-for"];
+  // const ipAddress = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(",")[0] || req.ip || req.socket.remoteAddress || "unknown";
+  // const ipKey = ipAddress.trim();
+  // if (registeredIps.has(ipKey)) {
+  //   return res.status(409).json({ message: "Only one account can be created from this IP address" });
+  // }
   const otp = emailOtps.find((item) => item.email === parsed.data.email.toLowerCase() && item.purpose === "signup");
   if (!otp || otp.expiresAt < Date.now()) return res.status(400).json({ message: "OTP has expired. Request a new OTP." });
   if (otp.attempts >= 5) return res.status(429).json({ message: "Too many OTP attempts. Request a new OTP." });
   if (otp.codeHash !== hashOtp(parsed.data.otp)) {
     otp.attempts += 1;
     return res.status(400).json({ message: "Invalid OTP" });
-  }
-
-  if (parsed.data.role === "agent") {
-    const ninCheck = await verifyNin(parsed.data.nin!);
-    if (!ninCheck.verified && process.env.NODE_ENV === "production") {
-      return res.status(400).json({ message: ninCheck.reason ?? "NIN verification failed" });
-    }
   }
 
   const user = {
@@ -192,14 +196,14 @@ app.post("/api/auth/register", async (req, res) => {
     agentProfiles.push({
       id: createId("agp"),
       userId: user.id,
-      nin: parsed.data.nin!,
+      nin: parsed.data.nin ?? "",
       phone: parsed.data.phone,
-      ninDocumentUrl: parsed.data.ninDocumentUrl!,
+      ninDocumentUrl: parsed.data.ninDocumentUrl ?? "",
       agentPhotoUrl: parsed.data.photoUrl!,
       bankName: "Pending",
       accountNumber: "0000000000",
       accountName: parsed.data.name,
-      idDocumentUrl: parsed.data.ninDocumentUrl!,
+      idDocumentUrl: parsed.data.ninDocumentUrl ?? "",
       verificationStatus: "pending_review",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -208,11 +212,11 @@ app.post("/api/auth/register", async (req, res) => {
     pushNotification({
       audience: "admin",
       title: "Agent awaiting verification",
-      body: `${user.name} registered as an agent and submitted NIN details.`
+      body: `${user.name} registered as an agent and submitted profile details.`
     });
   }
   emailOtps.splice(emailOtps.findIndex((item) => item.email === user.email && item.purpose === "signup"), 1);
-  registeredIps.add(ipKey);
+  // registeredIps.add(ipKey);
   res.status(201).json({ user: publicUser(user), token: signToken({ id: user.id, role: user.role }) });
 });
 
@@ -258,8 +262,6 @@ app.get("/api/lodges/:id", (req, res) => {
 app.post("/api/lodges", requireAuth, requireRole("agent", "admin"), (req: AuthRequest, res) => {
   const parsed = lodgeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid lodge data", errors: parsed.error.flatten() });
-  const currentUser = users.find((user) => user.id === req.user?.id);
-  if (currentUser?.role === "agent" && (!currentUser.verified || currentUser.accountStatus !== "active")) return res.status(403).json({ message: "Admin must verify your agent account before you can list a lodge" });
 
   const lodge = {
     id: createId("ldg"),
@@ -272,10 +274,9 @@ app.post("/api/lodges", requireAuth, requireRole("agent", "admin"), (req: AuthRe
   res.status(201).json(lodge);
 });
 
-app.patch("/api/lodges/:id/status", requireAuth, requireRole("agent", "admin"), (req: AuthRequest, res) => {
+app.patch("/api/lodges/:id/status", requireAuth, requireRole("admin"), (req: AuthRequest, res) => {
   const lodge = lodges.find((item) => item.id === req.params.id);
   if (!lodge) return res.status(404).json({ message: "Lodge not found" });
-  if (req.user?.role === "agent" && lodge.agentId !== req.user.id) return res.status(403).json({ message: "You can update only your listings" });
   if (!["pending", "approved", "rejected", "occupied"].includes(req.body.status)) return res.status(400).json({ message: "Invalid status" });
   lodge.status = req.body.status;
   res.json(lodge);
@@ -305,7 +306,7 @@ app.post("/api/lodges/:id/got-this", requireAuth, requireRole("student"), (req: 
     studentId: req.user!.id,
     agentId: lodge.agentId,
     rentAmount: lodge.price,
-    commissionAmount: calculateCommission(lodge.price),
+    commissionAmount: 0,
     status: "student_marked" as const,
     createdAt: new Date().toISOString()
   };
@@ -323,16 +324,13 @@ app.post("/api/lodges/:id/got-this", requireAuth, requireRole("student"), (req: 
 app.post("/api/agent/verify", requireAuth, requireRole("agent"), async (req: AuthRequest, res) => {
   const parsed = agentVerificationSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid verification data", errors: parsed.error.flatten() });
-  const ninCheck = await verifyNin(parsed.data.nin);
-  if (!ninCheck.verified && process.env.NODE_ENV === "production") {
-    return res.status(400).json({ message: ninCheck.reason ?? "NIN verification failed" });
-  }
-
   const existing = agentProfiles.find((profile) => profile.userId === req.user!.id);
   const timestamp = new Date().toISOString();
   if (existing) {
     Object.assign(existing, {
       ...parsed.data,
+      nin: parsed.data.nin ?? existing.nin,
+      ninDocumentUrl: parsed.data.ninDocumentUrl ?? existing.ninDocumentUrl,
       verificationStatus: "pending_review",
       rejectionReason: undefined,
       updatedAt: timestamp
@@ -342,6 +340,8 @@ app.post("/api/agent/verify", requireAuth, requireRole("agent"), async (req: Aut
       id: createId("agp"),
       userId: req.user!.id,
       ...parsed.data,
+      nin: parsed.data.nin ?? "",
+      ninDocumentUrl: parsed.data.ninDocumentUrl ?? parsed.data.idDocumentUrl,
       verificationStatus: "pending_review",
       createdAt: timestamp,
       updatedAt: timestamp
@@ -436,13 +436,11 @@ app.post("/api/transaction/initiate", requireAuth, requireRole("student"), (req:
     studentId: req.user!.id,
     agentId: lodge.agentId,
     amountPaid: amountPaid ?? lodge.price,
-    commissionAmount: computeCommission(lodge.price, commissionSettings),
+    commissionAmount: 0,
     status: "pending_confirmation" as const,
     createdAt: new Date().toISOString()
   };
   transactions.push(transaction);
-  const wallet = getOrCreateWallet(agentWallets, lodge.agentId);
-  wallet.pendingEarnings += transaction.commissionAmount;
   pushNotification({
     audience: "agent",
     targetUserId: lodge.agentId,
@@ -470,10 +468,6 @@ app.post("/api/transaction/confirm/:id", requireAuth, requireRole("agent"), (req
 
   transaction.status = "confirmed";
   const wallet = getOrCreateWallet(agentWallets, transaction.agentId);
-  wallet.pendingEarnings = Math.max(0, wallet.pendingEarnings - transaction.commissionAmount);
-  wallet.availableBalance += transaction.commissionAmount;
-  wallet.totalEarnings += transaction.commissionAmount;
-  platformRevenue.total += transaction.commissionAmount;
   const lodge = lodges.find((item) => item.id === transaction.lodgeId);
   if (lodge) lodge.status = "occupied";
   res.json({ transaction, wallet, platformRevenue });
@@ -486,7 +480,6 @@ app.post("/api/transaction/reject/:id", requireAuth, requireRole("agent"), (req:
   if (transaction.status !== "pending_confirmation") return res.status(409).json({ message: "Transaction is not pending" });
   transaction.status = "rejected";
   const wallet = getOrCreateWallet(agentWallets, transaction.agentId);
-  wallet.pendingEarnings = Math.max(0, wallet.pendingEarnings - transaction.commissionAmount);
   res.json({ transaction, wallet });
 });
 
@@ -496,11 +489,8 @@ app.get("/api/transactions/all", requireAuth, requireRole("admin"), (_req, res) 
 });
 
 app.post("/api/admin/set-commission", requireAuth, requireRole("admin"), (req, res) => {
-  const parsed = commissionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Invalid commission settings" });
-  commissionSettings.mode = parsed.data.mode;
-  commissionSettings.value = parsed.data.value;
-  res.json(commissionSettings);
+  void req;
+  res.status(410).json({ message: "Commission management is currently disabled." });
 });
 
 app.get("/api/admin/analytics", requireAuth, requireRole("admin"), (_req, res) => {
@@ -662,11 +652,8 @@ app.get("/api/admin/audit", requireAuth, requireRole("admin"), (_req, res) => {
 });
 
 app.patch("/api/admin/commission", requireAuth, requireRole("admin"), (req, res) => {
-  const parsed = commissionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Invalid commission settings" });
-  commissionSettings.mode = parsed.data.mode;
-  commissionSettings.value = parsed.data.value;
-  res.json(commissionSettings);
+  void req;
+  res.status(410).json({ message: "Commission management is currently disabled." });
 });
 
 // Upload endpoint used by agents/admins when attaching lodge photos.

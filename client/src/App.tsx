@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bell,
   Building2,
+  Camera,
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
@@ -135,12 +136,20 @@ const seedMembers: AppUser[] = [
 ];
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-const allowedEmailDomains = new Set(["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "unizik.edu.ng", "ziklodge.test"]);
+const profileImageMaxBytes = 2 * 1024 * 1024;
 
-// Registration accepts common public email providers plus education domains.
+// Regex catches invalid shape; OTP delivery proves the mailbox works after deployment.
 function isValidEmailAddress(value: string) {
   const domain = value.toLowerCase().split("@")[1];
-  return emailPattern.test(value) && Boolean(domain) && (allowedEmailDomains.has(domain) || domain.includes(".edu."));
+  return emailPattern.test(value) && Boolean(domain) && !domain.includes("..");
+}
+
+function cleanElevenDigitPhone(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
+function isValidElevenDigitPhone(value: string) {
+  return /^0\d{10}$/.test(value);
 }
 
 // File uploads are stored as data URLs in the frontend demo flow.
@@ -218,7 +227,7 @@ function App() {
   const [marketLodges, setMarketLodges] = useState<Lodge[]>(initialLodges);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => getStoredUser());
   const [members, setMembers] = useState<AppUser[]>(() => getStoredMembers());
-  const [commissionSettings, setCommissionSettings] = useState<CommissionSettings>({ mode: "percentage", value: 10 });
+  const [commissionSettings, setCommissionSettings] = useState<CommissionSettings>({ mode: "fixed", value: 0 });
   const [transactions, setTransactions] = useState<LodgeTransaction[]>([]);
   const [messageThreads, setMessageThreads] = useState<PlatformMessage[]>([]);
   const [reportInbox, setReportInbox] = useState<PlatformReport[]>([]);
@@ -293,7 +302,7 @@ function App() {
   // Rejection keeps the agent pending so they can correct verification details later.
   function rejectAgent(email: string) {
     const agent = members.find((member) => member.email === email);
-    setMembers((items) => items.map((item) => (item.email === email ? { ...item, verified: false, accountStatus: "pending" } : item)));
+    setMembers((items) => items.map((item) => (item.email === email ? { ...item, verified: true, accountStatus: "pending" } : item)));
     pushNotification({
       audience: "admin",
       title: "Agent account kept pending",
@@ -312,9 +321,10 @@ function App() {
     setAuditLogs((items) => [{ id: `aud-${Date.now()}`, actor, action, target, createdAt: new Date().toLocaleString() }, ...items]);
   }
 
-  // Mirrors the server commission helper for locally simulated transactions.
+  // Commission is disabled for now, so local demo transactions keep this at zero.
   function calculateLocalCommission(amount: number) {
-    return commissionSettings.mode === "fixed" ? commissionSettings.value : Math.round((amount * commissionSettings.value) / 100);
+    void amount;
+    return 0;
   }
 
   // Students use this when they mark a lodge as successfully obtained.
@@ -424,6 +434,15 @@ function App() {
     }
   }
 
+  // Admin approval controls which agent-uploaded lodges become publicly available.
+  function updateLodgeStatus(id: string, status: Lodge["status"]) {
+    setMarketLodges((items) => items.map((lodge) => (
+      lodge.id === id ? { ...lodge, status, verified: status === "available" ? true : lodge.verified && status !== "pending" } : lodge
+    )));
+    const lodge = marketLodges.find((item) => item.id === id);
+    pushAudit("Admin", "lodge.status_changed", `${lodge?.title ?? id} -> ${status}`);
+  }
+
   return (
     <div className={dark ? "dark" : ""}>
       <div className="min-h-screen bg-background text-foreground">
@@ -440,6 +459,7 @@ function App() {
           <Route path="/login" element={<AuthPage onAuth={updateCurrentUser} />} />
           <Route path="/register" element={<AuthPage register onAuth={updateCurrentUser} />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          
           <Route path="/verify" element={<ProtectedPage currentUser={currentUser} roles={["agent", "admin"]}><VerificationPage /></ProtectedPage>} />
           <Route path="/favorites" element={<ProtectedPage currentUser={currentUser}><FavoritesPage lodges={marketLodges} /></ProtectedPage>} />
           <Route path="/privacy" element={<PolicyPage type="privacy" />} />
@@ -591,7 +611,7 @@ function HomePage({ lodges, currentUser }: { lodges: Lodge[]; currentUser: AppUs
               Find your next student lodge without the stress.
             </h1>
             <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-              Zik Lodge connects UNIZIK students with verified agents, real lodge photos, transparent prices, reports, and commission-backed successful deals.
+              Zik Lodge connects UNIZIK students with verified agents, real lodge photos, transparent prices, reports, and successful deal tracking.
             </p>
             <SearchPanel compact={false} />
           </motion.div>
@@ -653,6 +673,7 @@ function SearchPanel({ compact = true }: { compact?: boolean }) {
         <option value="300000">Under ₦300k</option>
         <option value="500000">Under ₦500k</option>
         <option value="800000">Under ₦800k</option>
+        <option value="1.5m"> Under ₦1.5m</option>
       </Select>
       <Select value={type} onChange={(event) => setType(event.target.value)}>
         <option value="">Lodge type</option>
@@ -681,7 +702,7 @@ function FeaturedLodges({ lodges, currentUser }: { lodges: Lodge[]; currentUser:
       <SectionTitle icon={<Sparkles />} eyebrow="Featured" title="Fresh verified rooms students are viewing now" />
       {currentUser ? (
         <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {lodges.filter((lodge) => lodge.featured).map((lodge) => (
+          {lodges.filter((lodge) => lodge.featured && lodge.status === "available").map((lodge) => (
             <LodgeCard key={lodge.id} lodge={lodge} />
           ))}
         </div>
@@ -745,7 +766,7 @@ function HowItWorks() {
   const steps = [
     { icon: <Search />, title: "Search by budget", text: "Filter lodges by location, price, type, distance, and room availability." },
     { icon: <ShieldCheck />, title: "Verify before paying", text: "See approved agents, multiple images, reports, ratings, and listing status." },
-    { icon: <CheckCircle2 />, title: "Record successful deals", text: "Students mark a lodge as secured, agents confirm, and commission is calculated." }
+    { icon: <CheckCircle2 />, title: "Record successful deals", text: "Students mark a lodge as secured, and agents confirm the successful claim." }
   ];
   return (
     <section className="bg-card py-16">
@@ -795,7 +816,7 @@ function Testimonials() {
   return (
     <section className="bg-secondary py-16">
       <div className="page-shell grid gap-5 md:grid-cols-3">
-        {["I found a room near Ifite and confirmed the agent before inspection.", "The report button made me confident because fake posts get reviewed.", "Commission tracking makes every confirmed deal visible to admin."].map((text, index) => (
+        {["I found a room near Ifite and confirmed the agent before inspection.", "The report button made me confident because fake posts get reviewed.", "Every confirmed deal is visible to admin."].map((text, index) => (
           <Card key={text} className="p-5">
             <div className="flex gap-1 text-accent">{Array.from({ length: 5 }).map((_, i) => <Star key={i} className="fill-current" size={16} />)}</div>
             <p className="mt-4 text-foreground">{text}</p>
@@ -815,7 +836,7 @@ function CTA() {
         <div className="grid items-center gap-6 md:grid-cols-[1fr_auto]">
           <div>
             <h2 className="text-3xl font-black md:text-5xl">Ready to secure a verified lodge?</h2>
-            <p className="mt-3 max-w-2xl text-primary-foreground/80">Students can save listings and chat. Agents can upload rooms, manage occupancy, and track commission.</p>
+            <p className="mt-3 max-w-2xl text-primary-foreground/80">Students can save listings and chat. Agents can upload rooms and manage occupancy.</p>
           </div>
           <Link to="/lodges">
             <Button className="bg-accent text-accent-foreground hover:bg-accent">Browse lodges</Button>
@@ -841,7 +862,7 @@ function ListingsPage({ lodges }: { lodges: Lodge[] }) {
       const matchesPrice = !maxPrice || lodge.price <= Number(maxPrice);
       const matchesDistance = !maxDistance || lodge.distanceKm <= Number(maxDistance);
       const matchesRooms = !minRooms || lodge.availableRooms >= Number(minRooms);
-      return matchesQuery && matchesType && matchesPrice && matchesDistance && matchesRooms;
+      return lodge.status === "available" && matchesQuery && matchesType && matchesPrice && matchesDistance && matchesRooms;
     });
   }, [lodges, query, type, maxPrice, maxDistance, minRooms]);
 
@@ -987,7 +1008,7 @@ function LodgeDetailsPage({
             <p className="font-bold">Posted by: {lodge.agent}</p>
             <p className="mt-1 font-semibold">{lodge.phone}</p>
             <p className="mt-1 text-muted-foreground">{lodge.verified ? "Verified poster" : "Poster verification pending"}</p>
-            <p className="mt-1 text-muted-foreground">Deal confirmation triggers commission tracking after agent approval.</p>
+            <p className="mt-1 text-muted-foreground">Deal confirmation records the claim after agent approval.</p>
           </div>
           {chatOpen ? (
             <Card className="mt-4 p-4">
@@ -1132,7 +1153,7 @@ function StudentDashboard({
                 transaction.status,
                 transaction.id === "none" ? "-" : currency(transaction.commissionAmount)
               ])}
-              headers={["Lodge", "Agent", "Status", "Commission"]}
+              headers={["Lodge", "Agent", "Status", "Fee"]}
             />
           </Card>
           <div className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -1208,8 +1229,8 @@ function StudentDashboard({
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <Input value={profile.fullName} onChange={(event) => updateProfile("fullName", event.target.value)} placeholder="Full name" />
             <Input value={profile.email} onChange={(event) => updateProfile("email", event.target.value)} placeholder="Email address" type="email" />
-            <Input value={profile.phone} onChange={(event) => updateProfile("phone", event.target.value)} placeholder="Phone number" />
-            <Input value={profile.whatsapp} onChange={(event) => updateProfile("whatsapp", event.target.value)} placeholder="WhatsApp number for agent contact" />
+            <Input value={profile.phone} onChange={(event) => updateProfile("phone", cleanElevenDigitPhone(event.target.value))} placeholder="Phone number: 08012345678" type="tel" inputMode="numeric" minLength={11} maxLength={11} />
+            <Input value={profile.whatsapp} onChange={(event) => updateProfile("whatsapp", cleanElevenDigitPhone(event.target.value))} placeholder="WhatsApp number for agent contact" type="tel" inputMode="numeric" minLength={11} maxLength={11} />
             <Input value={profile.gender} onChange={(event) => updateProfile("gender", event.target.value)} placeholder="Gender optional" />
             <Input value={profile.institution} onChange={(event) => updateProfile("institution", event.target.value)} placeholder="Institution" />
             <Input value={profile.faculty} onChange={(event) => updateProfile("faculty", event.target.value)} placeholder="Faculty" />
@@ -1274,7 +1295,6 @@ function AgentDashboard({
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
-  const [verificationRef, setVerificationRef] = useState("");
   const [verificationMessage, setVerificationMessage] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
   const [selectedAgentThreadId, setSelectedAgentThreadId] = useState("");
@@ -1286,7 +1306,7 @@ function AgentDashboard({
     businessName: "",
     email: currentUser?.email ?? "",
     nin: "",
-    phone: "+234 803 111 2048",
+    phone: currentUser?.phone ? cleanElevenDigitPhone(currentUser.phone) : "",
     bankName: "",
     accountNumber: "",
     accountName: "",
@@ -1297,7 +1317,7 @@ function AgentDashboard({
   });
   const [form, setForm] = useState({
     agentName: currentUser?.name ?? "Adaeze Okafor",
-    phone: "+234 803 111 2048",
+    phone: currentUser?.phone ? cleanElevenDigitPhone(currentUser.phone) : "",
     title: "",
     location: "Ifite, Awka",
     price: "",
@@ -1383,6 +1403,11 @@ function AgentDashboard({
       setUploading(false);
       return;
     }
+    if (!isValidElevenDigitPhone(form.phone)) {
+      setUploadError("Agent phone number must be exactly 11 digits and start with 0.");
+      setUploading(false);
+      return;
+    }
 
     const titleSlug = form.title.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     const newLodge: Lodge = {
@@ -1394,8 +1419,8 @@ function AgentDashboard({
       type: form.type,
       distanceKm: Number(form.distanceKm),
       availableRooms: Number(form.availableRooms),
-      status: "available",
-      verified: isVerified,
+      status: "pending",
+      verified: false,
       featured: true,
       rating: 4.6,
       agent: form.agentName,
@@ -1407,7 +1432,7 @@ function AgentDashboard({
     };
 
     onAddLodge(newLodge);
-    setUploadMessage("Lodge uploaded and visible on the listings page.");
+    setUploadMessage("Lodge submitted. Admin must approve it before students see it.");
     setForm({
       agentName: form.agentName,
       phone: form.phone,
@@ -1425,10 +1450,10 @@ function AgentDashboard({
   }
 
   return (
-    <DashboardShell title="Agent dashboard" role={isVerified ? "Verified Agent" : "Agent verification pending"} activeTab={activeTab} onTabChange={setActiveTab}>
+    <DashboardShell title="Agent dashboard" role="Agent" activeTab={activeTab} onTabChange={setActiveTab}>
       {activeTab === "Overview" ? (
         <>
-          <Stats stats={[["My listings", agentLodges.length], ["Pending claims", pendingTransactions.length], ["Notifications", agentNotifications.length], ["Wallet balance", currency(walletBalance)]]} />
+          <Stats stats={[["My listings", agentLodges.length], ["Pending claims", pendingTransactions.length], ["Notifications", agentNotifications.length], ["Fees", currency(walletBalance)]]} />
           {agentNotifications.length ? (
             <Card className="mt-6 p-5">
               <h2 className="text-2xl font-black">Agent notifications</h2>
@@ -1444,32 +1469,9 @@ function AgentDashboard({
               <div className="mt-4 grid gap-3">
                 <Input value={form.agentName} onChange={(event) => updateForm("agentName", event.target.value)} placeholder="Full name" />
                 <Input value={verificationForm.businessName} onChange={(event) => updateVerificationForm("businessName", event.target.value)} placeholder="Business name e.g. Ejike Properties" />
-                <Input value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} placeholder="Phone / WhatsApp number" type="tel" />
-                <Badge className={cn("w-fit", isVerified ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground")}>{isVerified ? "Verified poster" : "Verification required"}</Badge>
+                <Input value={form.phone} onChange={(event) => updateForm("phone", cleanElevenDigitPhone(event.target.value))} placeholder="Phone / WhatsApp: 08012345678" type="tel" inputMode="numeric" minLength={11} maxLength={11} />
+                <Badge className="w-fit bg-accent text-accent-foreground">Listings need admin approval</Badge>
               </div>
-            </Card>
-            <Card className="p-5">
-              <h2 className="text-2xl font-black">Verification payment</h2>
-              <p className="mt-3 text-sm text-muted-foreground">Admin must approve your verification before lodge posting privileges open.</p>
-              <div className="mt-4 rounded-md bg-secondary p-4 text-sm">
-                <p className="font-black">Pay verification/commission fee to:</p>
-                <p className="mt-2">Bank: FirstBank</p>
-                <p>Account number: 3159371980</p>
-                <p>Account purpose: Zik Lodge verification</p>
-              </div>
-              <form
-                className="mt-4 grid gap-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  setVerificationForm((current) => ({ ...current, status: "pending_review" }));
-                  setVerificationMessage(`Payment reference ${verificationRef || "submitted"} received. Admin will review your verification.`);
-                  setVerificationRef("");
-                }}
-              >
-                <Input value={verificationRef} onChange={(event) => setVerificationRef(event.target.value)} placeholder="Payment reference or depositor name" required />
-                <Button type="submit"><ShieldCheck size={18} /> Submit verification payment</Button>
-              </form>
-              {verificationMessage ? <p className="mt-3 rounded-md bg-secondary p-3 text-sm font-semibold text-primary">{verificationMessage}</p> : null}
             </Card>
             <Card className="p-5 xl:col-span-2">
               <h2 className="text-2xl font-black">Incoming lodge claims</h2>
@@ -1480,7 +1482,7 @@ function AgentDashboard({
                     <div>
                       <p className="font-black">{transaction.lodgeTitle}</p>
                       <p className="text-sm text-muted-foreground">{transaction.studentName} · {currency(transaction.amountPaid)} · {transaction.status}</p>
-                      <p className="text-sm font-semibold text-primary">Commission: {currency(transaction.commissionAmount)}</p>
+                      <p className="text-sm font-semibold text-primary">Fee: {currency(transaction.commissionAmount)}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button disabled={!isVerified || transaction.status !== "pending_confirmation"} onClick={() => onTransactionStatus(transaction.id, "confirmed")}>Confirm</Button>
@@ -1497,14 +1499,13 @@ function AgentDashboard({
       <Card className="mt-6 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-black">Listing manager</h2>
-          <Button disabled={!isVerified} onClick={() => setUploadOpen((value) => !value)}><Upload size={18} /> {uploadOpen ? "Close form" : "Upload lodge"}</Button>
+          <Button onClick={() => setUploadOpen((value) => !value)}><Upload size={18} /> {uploadOpen ? "Close form" : "Upload lodge"}</Button>
         </div>
-        {!isVerified ? <p className="mt-4 rounded-md bg-destructive/10 p-3 text-sm font-semibold text-destructive">Verify your agent profile before uploading lodges.</p> : null}
         {uploadOpen ? (
           <form className="mt-5 grid gap-4 rounded-lg border border-border bg-background p-4" onSubmit={handleUploadSubmit}>
             <div className="grid gap-4 md:grid-cols-2">
               <Input value={form.agentName} onChange={(event) => updateForm("agentName", event.target.value)} placeholder="Agent name" required />
-              <Input value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} placeholder="Agent phone / WhatsApp number" type="tel" required />
+              <Input value={form.phone} onChange={(event) => updateForm("phone", cleanElevenDigitPhone(event.target.value))} placeholder="Agent phone / WhatsApp: 08012345678" type="tel" inputMode="numeric" minLength={11} maxLength={11} required />
               <Input value={form.title} onChange={(event) => updateForm("title", event.target.value)} placeholder="Lodge name" required />
               <Input value={form.location} onChange={(event) => updateForm("location", event.target.value)} placeholder="Location" required />
               <Input value={form.price} onChange={(event) => updateForm("price", event.target.value)} placeholder="Annual price, e.g. 450000" type="number" min="1" required />
@@ -1606,15 +1607,14 @@ function AgentDashboard({
             <Input value={verificationForm.fullName} onChange={(event) => updateVerificationForm("fullName", event.target.value)} placeholder="Full name" />
             <Input value={verificationForm.businessName} onChange={(event) => updateVerificationForm("businessName", event.target.value)} placeholder="Business name e.g. Ejike Properties" />
             <Input value={verificationForm.email} onChange={(event) => updateVerificationForm("email", event.target.value)} placeholder="Email" type="email" />
-            <Input value={verificationForm.phone} onChange={(event) => updateVerificationForm("phone", event.target.value)} placeholder="Phone number" />
-            <Input value={verificationForm.nin} onChange={(event) => updateVerificationForm("nin", event.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="NIN 11 digits" inputMode="numeric" />
+            <Input value={verificationForm.phone} onChange={(event) => updateVerificationForm("phone", cleanElevenDigitPhone(event.target.value))} placeholder="Phone number: 08012345678" type="tel" inputMode="numeric" minLength={11} maxLength={11} />
             <Input value={verificationForm.bankName} onChange={(event) => updateVerificationForm("bankName", event.target.value)} placeholder="Bank name" />
             <Input value={verificationForm.accountNumber} onChange={(event) => updateVerificationForm("accountNumber", event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="Account number" inputMode="numeric" />
             <Input value={verificationForm.accountName} onChange={(event) => updateVerificationForm("accountName", event.target.value)} placeholder="Account name" />
             <label className="grid gap-2 rounded-md border border-dashed border-border p-4 text-sm font-semibold">
               Government ID document
               <input type="file" accept="image/*,.pdf" onChange={(event) => updateVerificationForm("idDocument", event.target.files?.[0]?.name ?? "")} />
-              <span className="text-xs text-muted-foreground">{verificationForm.idDocument || "NIN slip, driver’s license, or voter’s card"}</span>
+              <span className="text-xs text-muted-foreground">{verificationForm.idDocument || "Driver's license, voter card, or other government ID"}</span>
             </label>
             <label className="grid gap-2 rounded-md border border-dashed border-border p-4 text-sm font-semibold">
               Selfie holding ID optional
@@ -1625,8 +1625,12 @@ function AgentDashboard({
           <Button
             className="mt-5"
             onClick={() => {
-              if (verificationForm.nin.length !== 11) {
-                setVerificationMessage("NIN must be exactly 11 digits before submission.");
+              if (!isValidEmailAddress(verificationForm.email)) {
+                setVerificationMessage("Enter a valid email address before submission.");
+                return;
+              }
+              if (!isValidElevenDigitPhone(verificationForm.phone)) {
+                setVerificationMessage("Phone number must be exactly 11 digits and start with 0.");
                 return;
               }
               setVerificationForm((current) => ({ ...current, status: "pending_review" }));
@@ -1642,7 +1646,7 @@ function AgentDashboard({
   );
 }
 
-// Admin dashboard centralizes moderation, commission settings, users, reports, and audits.
+// Admin dashboard centralizes moderation, users, reports, verification, transactions, and audits.
 function AdminDashboard({
   members,
   lodges,
@@ -1708,17 +1712,14 @@ function AdminDashboard({
       <Stats stats={[["Students", studentAccounts.length], ["Agents", agentAccounts.length], ["Admin notifications", adminNotifications.length], ["Platform revenue", currency(confirmedRevenue)]]} />
       <div className="mt-6 grid gap-5 xl:grid-cols-2">
         {activeTab === "Overview" ? <Card className="p-5">
-          <h2 className="text-2xl font-black">Commission management</h2>
+          <h2 className="text-2xl font-black">Verification payments</h2>
           <div className="mt-4 rounded-md bg-secondary p-4 text-sm">
-            <p className="font-black">All verification/commission payments go to:</p>
+            <p className="font-black">All verification payments go to:</p>
             <p className="mt-2">Bank: FirstBank</p>
             <p>Account number: 3159371980</p>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Input value={commissionSettings.value} onChange={(event) => onCommissionSettingsChange({ ...commissionSettings, value: Number(event.target.value) })} aria-label="Commission value" type="number" />
-            <Select value={commissionSettings.mode} onChange={(event) => onCommissionSettingsChange({ ...commissionSettings, mode: event.target.value as "percentage" | "fixed" })}><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></Select>
-          </div>
-          <Table rows={transactions.map((transaction) => [transaction.id, transaction.agentName, currency(transaction.commissionAmount), transaction.status])} headers={["Transaction", "Agent", "Commission", "Status"]} />
+          <p className="mt-4 rounded-md bg-background p-3 text-sm text-muted-foreground">Commission tracking is disabled for now.</p>
+          <Table rows={transactions.map((transaction) => [transaction.id, transaction.agentName, currency(transaction.commissionAmount), transaction.status])} headers={["Transaction", "Agent", "Fee", "Status"]} />
         </Card> : null}
         {activeTab === "Reports" ? <Card className="p-5 xl:col-span-2">
           <h2 className="text-2xl font-black">Reports and moderation</h2>
@@ -1764,8 +1765,7 @@ function AdminDashboard({
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div className="rounded-md border border-dashed border-border p-4">
                   <p className="font-bold">Government ID document</p>
-                  {previewAgent.ninDocumentUrl ? <img className="mt-3 h-48 w-full rounded-md object-cover" src={previewAgent.ninDocumentUrl} alt="Uploaded NIN document" /> : <p className="mt-2 text-sm text-muted-foreground">No NIN document uploaded in this demo profile.</p>}
-                  {previewAgent.nin ? <p className="mt-2 text-sm font-semibold">NIN: {previewAgent.nin}</p> : null}
+                  {previewAgent.ninDocumentUrl ? <img className="mt-3 h-48 w-full rounded-md object-cover" src={previewAgent.ninDocumentUrl} alt="Uploaded identity document" /> : <p className="mt-2 text-sm text-muted-foreground">No identity document uploaded in this demo profile.</p>}
                 </div>
                 <div className="rounded-md border border-dashed border-border p-4">
                   <p className="font-bold">Agent image</p>
@@ -1783,7 +1783,7 @@ function AdminDashboard({
                 <div>
                   <p className="font-black">{transaction.lodgeTitle}</p>
                   <p className="text-sm text-muted-foreground">{transaction.studentName} → {transaction.agentName} · {transaction.status}</p>
-                  <p className="text-sm font-semibold text-primary">Commission: {currency(transaction.commissionAmount)}</p>
+                  <p className="text-sm font-semibold text-primary">Fee: {currency(transaction.commissionAmount)}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={transaction.status !== "pending_confirmation"} onClick={() => onTransactionStatus(transaction.id, "confirmed")}>Force confirm</Button>
@@ -1832,8 +1832,6 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
   const [devOtp, setDevOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [photoUrl, setPhotoUrl] = useState("");
-  const [nin, setNin] = useState("");
-  const [ninDocumentUrl, setNinDocumentUrl] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1841,16 +1839,18 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
   async function requestOtp() {
     setError("");
     setMessage("");
-    if (!isValidEmailAddress(email)) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isValidEmailAddress(normalizedEmail)) {
       setError("Invalid email");
       return;
     }
+    setEmail(normalizedEmail);
     setLoading(true);
     try {
       const response = await fetch("/api/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email: normalizedEmail })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message ?? "Could not send OTP");
@@ -1871,8 +1871,8 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
       setError("Only image uploads are allowed here.");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Each image must be 5MB or smaller.");
+    if (file.size > profileImageMaxBytes) {
+      setError("Profile images must be 2MB or smaller.");
       return;
     }
     setter(await readFileAsDataUrl(file));
@@ -1885,14 +1885,16 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
     setLoading(true);
 
     try {
-      if (register && !isValidEmailAddress(email)) throw new Error("Invalid email");
+      const normalizedEmail = email.trim().toLowerCase();
+      if (register && !isValidEmailAddress(normalizedEmail)) throw new Error("Invalid email");
       if (register && !otpSent) throw new Error("Request and enter the email OTP before creating your account.");
-      if (register && !phone.trim()) throw new Error("Phone number is required.");
-      if (register && role === "agent" && (!/^\d{11}$/.test(nin) || !ninDocumentUrl || !photoUrl)) {
-        throw new Error("Agents must provide a valid 11-digit NIN, NIN image, and agent image.");
+      if (register && !isValidElevenDigitPhone(phone)) throw new Error("Phone number must be exactly 11 digits and start with 0.");
+      if (register && !photoUrl) {
+        throw new Error("Add a profile image before creating your account.");
       }
+      setEmail(normalizedEmail);
       const endpoint = register ? "/api/auth/register" : "/api/auth/login";
-      const payload = register ? { name, email, phone, password, role, otp, photoUrl: photoUrl || undefined, nin: nin || undefined, ninDocumentUrl: ninDocumentUrl || undefined } : { email, password };
+      const payload = register ? { name, email: normalizedEmail, phone, password, role, otp, photoUrl } : { email: normalizedEmail, password };
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1938,11 +1940,7 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
                 <Button type="button" variant="secondary" onClick={requestOtp} disabled={loading || !email}>{otpSent ? "Resend OTP" : "Send OTP"}</Button>
               </div>
               {devOtp ? <p className="rounded-md bg-secondary p-3 text-sm font-semibold text-primary">Development OTP: {devOtp}</p> : null}
-              <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone number" type="tel" required />
-              <label className="grid gap-2 rounded-md border border-dashed border-border bg-background p-3 text-sm font-semibold">
-                Upload profile image
-                <input type="file" accept="image/*" onChange={(event) => handleFileChange(event, setPhotoUrl)} required={role === "agent"} />
-              </label>
+              <Input value={phone} onChange={(event) => setPhone(cleanElevenDigitPhone(event.target.value))} placeholder="Phone number: 08012345678" type="tel" inputMode="numeric" minLength={11} maxLength={11} required />
             </>
           ) : null}
           <Input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" minLength={register ? 8 : 1} required />
@@ -1952,14 +1950,17 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
               <option value="agent">Agent/Landlord/Subletter</option>
             </Select>
           ) : null}
-          {register && role === "agent" ? (
-            <>
-              <Input value={nin} onChange={(event) => setNin(event.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="11-digit NIN" inputMode="numeric" minLength={11} maxLength={11} required />
-              <label className="grid gap-2 rounded-md border border-dashed border-border bg-background p-3 text-sm font-semibold">
-                Upload NIN image
-                <input type="file" accept="image/*" onChange={(event) => handleFileChange(event, setNinDocumentUrl)} required />
-              </label>
-            </>
+          {register ? (
+            <label className="grid gap-3 rounded-md border border-dashed border-border bg-background p-4 text-sm font-semibold sm:grid-cols-[auto_1fr] sm:items-center">
+              <span className="relative grid size-24 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-secondary text-muted-foreground">
+                {photoUrl ? <img className="h-full w-full object-cover" src={photoUrl} alt="Profile preview" /> : <Camera size={32} />}
+              </span>
+              <span className="grid gap-2">
+                <span>Add profile image</span>
+                <span className="text-xs font-normal text-muted-foreground">This becomes your round account photo, like WhatsApp or Facebook. Max 2MB.</span>
+                <input type="file" accept="image/*" onChange={(event) => handleFileChange(event, setPhotoUrl)} required />
+              </span>
+            </label>
           ) : null}
           {!register ? <p className="rounded-md bg-secondary p-3 text-sm text-muted-foreground">Programmer/admin login is restricted to the admin account only.</p> : null}
           {error ? <p className="rounded-md bg-destructive/10 p-3 text-sm font-semibold text-destructive">{error}</p> : null}
@@ -1976,6 +1977,7 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (u
 // Password recovery requests an OTP and then submits the new password.
 function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -1985,25 +1987,33 @@ function ForgotPasswordPage() {
   async function requestResetOtp() {
     setError("");
     setMessage("");
-    if (!isValidEmailAddress(email)) return setError("Invalid email");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isValidEmailAddress(normalizedEmail)) return setError("Invalid email");
+    setEmail(normalizedEmail);
     const response = await fetch("/api/auth/forgot-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email: normalizedEmail })
     });
     const data = await response.json();
+    if (!response.ok) return setError(data.message ?? "Could not send reset OTP");
+    setResetEmail(normalizedEmail);
     setDevOtp(data.devOtp ?? "");
-    setMessage(data.devOtp ? `Reset OTP sent. Development OTP: ${data.devOtp}` : data.message ?? "Reset OTP sent.");
+    setMessage(data.devOtp ? `Reset OTP sent to ${normalizedEmail}. Development OTP: ${data.devOtp}` : `Reset OTP sent to ${normalizedEmail}.`);
   }
 
   async function resetPassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setMessage("");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!resetEmail || normalizedEmail !== resetEmail) {
+      return setError("Use the same email address that received the reset OTP.");
+    }
     const response = await fetch("/api/auth/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp, password })
+      body: JSON.stringify({ email: resetEmail, otp, password })
     });
     const data = await response.json();
     if (!response.ok) return setError(data.message ?? "Password reset failed");
@@ -2038,7 +2048,7 @@ function VerificationPage() {
     <main className="page-shell py-10">
       <SectionTitle icon={<ShieldCheck />} eyebrow="Verification" title="Agent verification center" />
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
-        {["Identity document", "Office or landlord proof", "Bank and commission profile"].map((item, index) => (
+        {["Identity document", "Office or landlord proof", "Bank profile"].map((item, index) => (
           <Card key={item} className="p-5">
             <span className="grid size-12 place-items-center rounded-md bg-secondary text-primary">{index + 1}</span>
             <h2 className="mt-5 text-xl font-black">{item}</h2>
@@ -2068,7 +2078,7 @@ function PolicyPage({ type }: { type: "privacy" | "terms" | "refund" | "abuse" }
       body: [
         "Zik Lodge collects account, contact, verification, lodge, chat, report, and transaction information needed to run the marketplace safely.",
         "Student private details are visible only to that student and authorized admins. Agents see only the contact details students choose to share through lodge contact and messaging flows.",
-        "Uploaded IDs and NIN documents are restricted to verification review and must be stored in secure cloud storage with access controls in production."
+        "Uploaded identity documents are restricted to verification review and must be stored in secure cloud storage with access controls in production."
       ]
     },
     terms: {
@@ -2080,11 +2090,11 @@ function PolicyPage({ type }: { type: "privacy" | "terms" | "refund" | "abuse" }
       ]
     },
     refund: {
-      title: "Refund and commission policy",
+      title: "Refund policy",
       body: [
-        "Agent verification and commission payments are reviewed by the Zik Lodge admin team before privileges or settlement are finalized.",
-        "Commission is recorded when a student marks a lodge and the agent confirms the successful deal.",
-        "Disputed commissions can be reviewed from the admin dashboard using transaction, report, chat, and audit records."
+        "Agent verification payments are reviewed by the Zik Lodge admin team before privileges are finalized.",
+        "When a student marks a lodge and the agent confirms the successful deal, the transaction is recorded for admin review.",
+        "Disputed payments can be reviewed from the admin dashboard using transaction, report, chat, and audit records."
       ]
     },
     abuse: {
@@ -2115,7 +2125,7 @@ function AboutPage() {
     <main className="page-shell py-16">
       <SectionTitle icon={<Building2 />} eyebrow="About" title="A scalable lodge marketplace for Nigerian universities" />
       <p className="mt-6 max-w-3xl text-lg text-muted-foreground">
-        Zik Lodge starts with UNIZIK and is structured for expansion across Nigeria. Listings are tied to universities, agents pass verification, reports flow to admin moderation, and successful student deals create commission records.
+        Zik Lodge starts with UNIZIK and is structured for expansion across Nigeria. Listings are tied to universities, agents pass verification, reports flow to admin moderation, and successful student deals are recorded.
       </p>
     </main>
   );
@@ -2263,7 +2273,7 @@ function Footer() {
             <span className="flex items-center gap-2"><ShieldCheck size={16} /> Agent verification</span>
             <span className="flex items-center gap-2"><Flag size={16} /> Fake lodge reporting</span>
             <Link to="/privacy">Privacy policy</Link>
-            <Link to="/refund-commission-policy">Refund/commission policy</Link>
+            <Link to="/refund-commission-policy">Refund policy</Link>
             <a className="flex items-center gap-2" href="mailto:supporttearmziklodge@gmail.com"><Mail size={16} /> supporttearmziklodge@gmail.com</a>
           </div>
         </div>
