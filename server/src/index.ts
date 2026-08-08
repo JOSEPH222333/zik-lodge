@@ -681,10 +681,11 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // Avoid binding a port during test runs; Vitest imports app directly.
-if (process.env.NODE_ENV !== "test") {
-  app.listen(port, "127.0.0.1", () => {
-    console.log(`Zik Lodge API listening on http://127.0.0.1:${port}`);
+if (process.env.NODE_ENV !== "test" && process.env.VERCEL !== "1") {
+  app.listen(port, () => {
+    console.log(`Zik Lodge API listening on port ${port}`);
   });
 }
 
+export default app;
 export { app };
